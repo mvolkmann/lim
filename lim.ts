@@ -12,6 +12,8 @@ async function main(): Promise<void> {
   }
 
   try {
+    // TextDecoderStream converts bytes into strings.
+    // It handles UTF-8 characters whose bytes span multiple chunks.
     const stream = Bun.file(filePath).stream().pipeThrough(new TextDecoderStream());
     const tokens = await tokenizer(stream);
     const ast = buildAST(tokens);
