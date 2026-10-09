@@ -1,16 +1,39 @@
 import { expect, spyOn, test } from 'bun:test';
 import { buildAST } from './ast';
 import { executeAST } from './execute';
+import { tokenizer } from './tokenizer';
 
-// Verifies nested calls evaluate before put prints the demo's result.
-test('executes demo.lim and prints 5', async () => {
-  const source = await Bun.file(new URL('./demo.lim', import.meta.url)).text();
+// Verifies arithmetic failures report the complete expression in the function body.
+test('includes the invalid expression in arithmetic errors', () => {
+  expect(() => executeAST(buildAST([
+    'add:i', 'n1:i', 'n2:i', '->', 'n1', '+', 'n2',
+    'score:t', '<-', '"foo"', 'add', '2', 'score',
+  ]))).toThrow('Invalid expression: n1 + n2\nOperator "+" requires numeric operands');
+  expect(() => executeAST(buildAST([
+    'add:i', 'n1:i', 'n2:i', '->', 'n1', '+', 'n2', '*', '3',
+    'add', '"foo"', '2',
+  ]))).toThrow('Invalid expression: n1 + (n2 * 3)');
+  expect(() => executeAST({
+    type: 'Program',
+    body: [{
+      type: 'BinaryExpression', operator: '+',
+      left: { type: 'TextLiteral', value: 'foo' },
+      right: { type: 'NumberLiteral', value: 3 },
+    }],
+  })).toThrow('Invalid expression: "foo" + 3');
+});
+
+// Verifies nested calls use typed variables before put prints the result.
+test('executes a typed assignment and prints 5', async () => {
+  const stream = new Blob(['add:i n1:i n2:i -> n1 + n2\n# comment\nscore:i <- 3\nput add 2 score'])
+    .stream().pipeThrough(new TextDecoderStream());
+  const tokens = await tokenizer(stream);
   const log = spyOn(console, 'log').mockImplementation(
     // Suppresses output while recording evaluated arguments.
     () => {},
   );
   try {
-    expect(executeAST(buildAST(source.trim().split(/\s+/)))).toBeNull();
+    expect(executeAST(buildAST(tokens))).toBeNull();
     expect(log).toHaveBeenCalledTimes(1);
     expect(log).toHaveBeenCalledWith(5);
   } finally {

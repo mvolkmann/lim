@@ -1,5 +1,8 @@
-add:i n1:i n2:i -> n1 + n2
+sum:i n1:i n2:i -> n1 + n2
+product:f n1:f n2:f -> n1 * n2
 
-score:i <- 3
+# This is a comment.
+word:t <- "foo"
+pi:f <- 3.14
 
-put add 2 score
+put product 2 pi

@@ -98,12 +98,18 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     return fail('Expected an argument');
   }
 
-  // Parses an initializer and records the variable's declared or inferred type.
+  // Validates an initializer and records the variable's declared or inferred type.
   function readAssignment(name: string, declaredType?: string): Expression {
     position++;
     const value = readExpression();
+    const valueType = getType(value);
+    if (declaredType !== undefined && valueType !== declaredType) {
+      throw new TypeError(
+        `Variable "${name}" declared as type "${declaredType}" cannot be initialized with type "${valueType ?? 'unknown'}"`,
+      );
+    }
     scopes[scopes.length - 1].set(name, null);
-    typeScopes[typeScopes.length - 1].set(name, declaredType ?? getType(value));
+    typeScopes[typeScopes.length - 1].set(name, declaredType ?? valueType);
     return declaredType === undefined
       ? { type: 'Assignment', name, value }
       : { type: 'Assignment', name, declaredType, value };

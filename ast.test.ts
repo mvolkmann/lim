@@ -2,6 +2,24 @@ import { expect, test } from 'bun:test';
 import { buildAST } from './ast';
 import { tokenizer } from './tokenizer';
 
+// Verifies declarations reject initializers with a different type before further expressions are parsed.
+test('checks typed assignment initializer types', () => {
+  for (const prefix of [['score:t'], ['score', ':', 't']]) {
+    expect(() => buildAST([...prefix, '<-', '3'])).toThrow(
+      'Variable "score" declared as type "t" cannot be initialized with type "i"',
+    );
+    expect(() => buildAST([...prefix, '<-', 'true'])).toThrow(TypeError);
+    expect(() => buildAST([...prefix, '<-', '"hello"'])).not.toThrow();
+  }
+  expect(() => buildAST(['score:i', '<-', '3.5'])).toThrow(TypeError);
+  expect(() => buildAST(['score:b', '<-', 'true'])).not.toThrow();
+  expect(() => buildAST(['score:f', '<-', '3.5'])).not.toThrow();
+  expect(() => buildAST(['score:t', '<-', '1', '+', '2'])).toThrow(TypeError);
+  expect(() => buildAST(['value:i', '->', '3', 'score:t', '<-', 'value'])).toThrow(TypeError);
+  expect(() => buildAST(['value:t', '->', '"hello"', 'score:t', '<-', 'value'])).not.toThrow();
+  expect(() => buildAST(['f:i', 'x:i', '->', '{', 'score:t', '<-', 'x', '}'])).toThrow(TypeError);
+});
+
 // Verifies compact and separated declarations preserve the name, type, and initializer.
 test('parses typed variable declarations', () => {
   for (const prefix of [['score:i'], ['score', ':', 'i']]) {
@@ -53,9 +71,10 @@ test('parses double-star exponentiation', () => {
   });
 });
 
-// Verifies tokenization and parsing of the demo's function, declaration, and call.
-test('parses demo.lim without block delimiters', async () => {
-  const stream = Bun.file(new URL('./demo.lim', import.meta.url)).stream().pipeThrough(new TextDecoderStream());
+// Verifies tokenization and parsing of a function, declaration, and call without block delimiters.
+test('parses a typed assignment between a function and a call', async () => {
+  const stream = new Blob(['add:i n1:i n2:i -> n1 + n2\n# comment\nscore:i <- 3\nput add 2 score'])
+    .stream().pipeThrough(new TextDecoderStream());
   expect(buildAST(await tokenizer(stream))).toEqual({
     type: 'Program',
     body: [

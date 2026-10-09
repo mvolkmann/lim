@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { buildAST } from './ast';
 import { tokenizer } from './tokenizer';
 
 // Creates a text stream from the supplied chunks.
@@ -14,6 +15,50 @@ function createStream(chunks: string[]): ReadableStream<string> {
 
 // Groups tests for tokenizing streamed input.
 describe('tokenizer', () => {
+  // Verifies text initializers retain their quotes in tokens and become text AST nodes.
+  test('tokenizes text variable declarations', async () => {
+    const tokens = await tokenizer(createStream(['score:t <- "foo"']));
+    expect(tokens).toEqual(['score:t', '<-', '"foo"']);
+    expect(buildAST(tokens).body).toEqual([{
+      type: 'Assignment', name: 'score', declaredType: 't',
+      value: { type: 'TextLiteral', value: 'foo' },
+    }]);
+  });
+
+  // Verifies spaces, comment markers, and escaped quotes stay inside text across chunks.
+  test('preserves text contents across stream chunks', async () => {
+    expect(await tokenizer(createStream([
+      'score:t <- "hello # ', 'world"# comment\nput ""',
+    ]))).toEqual(['score:t', '<-', '"hello # world"', 'put', '""']);
+    expect(await tokenizer(createStream(['"a\\', '"b"']))).toEqual(['"a\\"b"']);
+    expect(await tokenizer(createStream(['"a\\', '\\"']))).toEqual(['"a\\\\"']);
+    await expect(tokenizer(createStream(['"unfinished']))).rejects.toThrow('Unterminated text literal');
+    await expect(tokenizer(createStream(['"unfinished\\']))).rejects.toThrow('Unterminated text literal');
+  });
+
+  // Verifies full-line and trailing comments disappear from tokens and the AST.
+  test('ignores end of line comments', async () => {
+    const tokens = await tokenizer(createStream([
+      '# full-line comment with invalid symbols @\nscore:i <- 3# trailing comment\n',
+      '# final comment without a newline',
+    ]));
+    expect(tokens).toEqual(['score:i', '<-', '3']);
+    expect(buildAST(tokens).body).toEqual([{
+      type: 'Assignment', name: 'score', declaredType: 'i',
+      value: { type: 'NumberLiteral', value: 3 },
+    }]);
+    expect(await tokenizer(createStream(['# comment only']))).toEqual([]);
+  });
+
+  // Verifies comment state survives stream chunks and resumes after line endings.
+  test('ignores comments split across stream chunks', async () => {
+    expect(await tokenizer(createStream([
+      'score:i <- 3 # com', 'ment @', '\r', '\nput score#', ' another comment',
+    ]))).toEqual(['score:i', '<-', '3', 'put', 'score']);
+    expect(await tokenizer(createStream(['1# comment\r2']))).toEqual(['1', '2']);
+    await expect(tokenizer(createStream(['@# comment']))).rejects.toThrow('invalid token "@"');
+  });
+
   // Verifies typed declarations and a final token without trailing whitespace.
   test('tokenizes typed variable declarations', async () => {
     expect(await tokenizer(createStream(['score:', 'i <- ', '3']))).toEqual(['score:i', '<-', '3']);

@@ -26,7 +26,9 @@ export function executeAST(ast: { type: 'Program'; body: Expression[] }): Runtim
         const left = executeExpression(expression.left, scope);
         const right = executeExpression(expression.right, scope);
         if (typeof left !== 'number' || typeof right !== 'number') {
-          throw new TypeError(`Operator "${expression.operator}" requires numeric operands`);
+          throw new TypeError(
+            `Invalid expression: ${formatExpression(expression)}\nOperator "${expression.operator}" requires numeric operands`,
+          );
         }
         switch (expression.operator) {
           case '+': return left + right;
@@ -88,5 +90,26 @@ export function executeAST(ast: { type: 'Program'; body: Expression[] }): Runtim
   let result: RuntimeValue = null;
   for (const expression of ast.body) result = executeExpression(expression, environment);
   return result;
+}
+
+// Renders an entire expression, preserving nested arithmetic structure for error messages.
+function formatExpression(expression: Expression): string {
+  switch (expression.type) {
+    case 'Assignment':
+      return `${expression.name}${expression.declaredType ? `:${expression.declaredType}` : ''} <- ${formatExpression(expression.value)}`;
+    case 'BinaryExpression': {
+      const left = formatExpression(expression.left);
+      const right = formatExpression(expression.right);
+      return `${expression.left.type === 'BinaryExpression' ? `(${left})` : left} ${expression.operator} ${expression.right.type === 'BinaryExpression' ? `(${right})` : right}`;
+    }
+    case 'BooleanLiteral':
+    case 'NumberLiteral': return String(expression.value);
+    case 'TextLiteral': return JSON.stringify(expression.value);
+    case 'Identifier': return expression.name;
+    case 'FunctionCall':
+      return [expression.name, ...expression.arguments.map(formatExpression)].join(' ');
+    case 'FunctionDefinition':
+      return `${expression.signature.name}:${expression.signature.type} ${expression.parameters.map(parameter => `${parameter.name}:${parameter.type}`).join(' ')} -> { ${expression.body.body.map(formatExpression).join(' ')} }`;
+  }
 }
 
