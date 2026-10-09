@@ -1,6 +1,7 @@
 import { isIdentifier, isTypedIdentifier } from './tokenizer';
 
 type TypedIdentifier = { name: string; type: string };
+
 export type Expression =
   | { type: 'Assignment'; name: string; value: Expression }
   | { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }
@@ -10,7 +11,9 @@ export type Expression =
   | { type: 'NumberLiteral'; value: number }
   | { type: 'TextLiteral'; value: string }
   | { type: 'Identifier'; name: string };
-export type Argument = Expression;
+
+type Argument = Expression;
+
 type Block = { type: 'Block'; body: Expression[] };
 
 /**
