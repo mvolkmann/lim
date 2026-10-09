@@ -58,7 +58,7 @@ type Environment = { bindings: Map<string, RuntimeValue>; parent?: Environment }
  * @param tokens array of strings
  * @returns AST
  */
-export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[] } {
+function buildAST(tokens: string[]): { type: 'Program'; body: Expression[] } {
   // boolean ::= 'true' | 'false'
   // number ::= integer | float
   // integer ::= '-'? digit+
@@ -348,7 +348,10 @@ async function main(): Promise<void> {
 
   try {
     const stream = Bun.file(filePath).stream().pipeThrough(new TextDecoderStream());
-    await parse(stream);
+    const tokens = await tokenizer(stream);
+    const ast = buildAST(tokens);
+    console.log('parser.ts: AST =', JSON.stringify(ast, null, 2));
+    executeAST(ast);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
@@ -356,28 +359,26 @@ async function main(): Promise<void> {
 }
 
 // Reads whitespace-delimited tokens from a stream and logs recognized tokens.
-export async function parse(stream: ReadableStream<string>) {
+export async function tokenizer(stream: ReadableStream<string>) {
   let buffer = '';
   const tokens = [];
 
-    for await (const chunk of stream) {
-      for (const char of chunk) {
-        if (char === ' ' || char === '\n' || char === '\t') {
-          if (isToken(buffer)) {
-            tokens.push(buffer);
-            buffer = '';
-          } else if (buffer.length > 0) {
-            throw new Error(`invalid token "${buffer}"`);
-          }
-        } else {
-          buffer += char;
+  for await (const chunk of stream) {
+    for (const char of chunk) {
+      if (char === ' ' || char === '\n' || char === '\t') {
+        if (isToken(buffer)) {
+          tokens.push(buffer);
+          buffer = '';
+        } else if (buffer.length > 0) {
+          throw new Error(`invalid token "${buffer}"`);
         }
+      } else {
+        buffer += char;
       }
     }
-    console.log('parser.ts: tokens =', tokens);
-    const ast = buildAST(tokens);
-    console.log('parser.ts: AST =', JSON.stringify(ast, null, 2));
-    executeAST(ast);
+  }
+
+  return tokens;
 }
 
 if (import.meta.main) main();
