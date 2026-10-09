@@ -1,6 +1,6 @@
 import type { Expression } from './ast';
 
-type RuntimeValue = boolean | number | string | null | RuntimeFunction;
+type RuntimeValue = boolean | number | string | null | RuntimeFunction | RuntimeValue[];
 type RuntimeFunction = (...args: RuntimeValue[]) => RuntimeValue;
 type Environment = { bindings: Map<string, RuntimeValue>; parent?: Environment };
 
@@ -31,6 +31,11 @@ export function executeAST(ast: { type: 'Program'; body: Expression[] }): Runtim
   // Evaluates an expression, resolving names and calls in its lexical environment.
   function executeExpression(expression: Expression, scope: Environment): RuntimeValue {
     switch (expression.type) {
+      case 'ArrayLiteral': {
+        const values: RuntimeValue[] = [];
+        for (const element of expression.elements) values.push(executeExpression(element, scope));
+        return values;
+      }
       case 'BooleanLiteral':
       case 'NumberLiteral':
       case 'TextLiteral':
@@ -39,6 +44,19 @@ export function executeAST(ast: { type: 'Program'; body: Expression[] }): Runtim
         return lookup(expression.name, scope);
       case 'MethodCall': {
         const receiver = executeExpression(expression.receiver, scope);
+        if (expression.name === 'sum') {
+          if (!Array.isArray(receiver)) {
+            throw new TypeError('Array method "sum" requires a receiver of type "i[]" or "f[]"');
+          }
+          let total = 0;
+          for (const value of receiver) {
+            if (typeof value !== 'number') {
+              throw new TypeError('Array method "sum" requires numeric elements');
+            }
+            total += value;
+          }
+          return total;
+        }
         if (typeof receiver !== 'string') {
           throw new TypeError(`Text method "${expression.name}" requires a receiver of type "t"`);
         }
@@ -128,6 +146,7 @@ export function executeAST(ast: { type: 'Program'; body: Expression[] }): Runtim
 // Renders an entire expression, preserving nested arithmetic structure for error messages.
 function formatExpression(expression: Expression): string {
   switch (expression.type) {
+    case 'ArrayLiteral': return `[${expression.elements.map(formatExpression).join(' ')}]`;
     case 'Assignment':
       return `${expression.name}${expression.declaredType ? `:${expression.declaredType}` : ''} <- ${formatExpression(expression.value)}`;
     case 'BinaryExpression': {

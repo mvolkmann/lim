@@ -15,6 +15,21 @@ function createStream(chunks: string[]): ReadableStream<string> {
 
 // Groups tests for tokenizing streamed input.
 describe('tokenizer', () => {
+  // Verifies array type suffixes stay distinguishable from literal brackets across chunks.
+  test('tokenizes typed array declarations', async () => {
+    expect(await tokenizer(createStream(['values:i[', '] <- [1 2]\nwords : t', '[] <- []']))).toEqual([
+      'values:i', '[', ']', '<-', '[', '1', '2', ']', '\n', 'words', ':', 't', '[', ']', '<-', '[', ']',
+    ]);
+  });
+
+  // Verifies brackets delimit tokens across chunks and commas remain invalid.
+  test('tokenizes array delimiters', async () => {
+    expect(await tokenizer(createStream(['[1 [', '2]\n"[text]"][]']))).toEqual([
+      '[', '1', '[', '2', ']', '\n', '"[text]"', ']', '[', ']',
+    ]);
+    await expect(tokenizer(createStream(['[1, 2]']))).rejects.toThrow('invalid token');
+  });
+
   // Verifies text initializers retain their quotes in tokens and become text AST nodes.
   test('tokenizes text variable declarations', async () => {
     const tokens = await tokenizer(createStream(['score:t <- "foo"']));

@@ -2,6 +2,49 @@ import { expect, test } from 'bun:test';
 import { buildAST } from './ast';
 import { tokenizer } from './tokenizer';
 
+// Verifies compact and spaced array declarations consume their type suffix and check elements.
+test('parses typed array declarations', async () => {
+  for (const [type, literal] of [['i', '[1 2]'], ['f', '[1 2.5]'], ['t', '["one" "two"]']]) {
+    for (const declaration of [`values:${type}[]`, `values : ${type} [ ]`]) {
+      const source = `put 1 ${declaration} <- ${literal}\nempty:${type}[] <- []`;
+      const tokens = await tokenizer(new Blob([source]).stream().pipeThrough(new TextDecoderStream()));
+      expect(buildAST(tokens).body).toMatchObject([
+        { type: 'FunctionCall', name: 'put', arguments: [{ type: 'NumberLiteral', value: 1 }] },
+        { type: 'Assignment', name: 'values', declaredType: `${type}[]`, value: { type: 'ArrayLiteral' } },
+        { type: 'Assignment', name: 'empty', declaredType: `${type}[]`, value: { type: 'ArrayLiteral', elements: [] } },
+      ]);
+    }
+    expect(buildAST([`values:${type}[]`, '<-', '[', ']']).body[0]).toMatchObject({ declaredType: `${type}[]` });
+  }
+});
+
+// Verifies typed literals reject incorrect element types and scalar initializers.
+test('rejects invalid typed array initializers', () => {
+  for (const [type, element] of [
+    ['i[]', '2.5'], ['i[]', '"text"'], ['f[]', 'true'], ['t[]', '1'], ['t[]', 'missing'],
+  ]) {
+    expect(() => buildAST([`values:${type}`, '<-', '[', element, ']'])).toThrow(TypeError);
+  }
+  expect(() => buildAST(['values:i[]', '<-', '[', '[', '1', ']', ']'])).toThrow(TypeError);
+  expect(() => buildAST(['values:i[]', '<-', '1'])).toThrow(TypeError);
+  expect(() => buildAST(['word:t', '<-', '"hello"', 'values:i[]', '<-', '[', 'word', ']'])).toThrow(TypeError);
+});
+
+// Verifies sum receiver and result types, inference, and parameter shadowing.
+test('checks numeric array sum types', () => {
+  expect(() => buildAST(['values:i[]', '<-', '[', '1', ']', 'total:i', '<-', 'values', '.', 'sum'])).not.toThrow();
+  expect(() => buildAST(['values:f[]', '<-', '[', '1', ']', 'total:f', '<-', 'values', '.', 'sum'])).not.toThrow();
+  expect(() => buildAST(['values:f[]', '<-', '[', '1', ']', 'total:i', '<-', 'values', '.', 'sum'])).toThrow(TypeError);
+  expect(() => buildAST(['total:f', '<-', '[', '1', '2.5', ']', '.', 'sum'])).not.toThrow();
+  expect(() => buildAST(['total:i', '<-', '[', '1', '2', ']', '.', 'sum'])).not.toThrow();
+  for (const receiver of [['1'], ['"text"'], ['[', '"text"', ']'], ['[', '1', 'true', ']'], ['[', ']']]) {
+    expect(() => buildAST([...receiver, '.', 'sum'])).toThrow('requires a receiver of type "i[]" or "f[]"');
+  }
+  expect(() => buildAST(['values:t[]', '<-', '[', '"text"', ']', 'values', '.', 'sum'])).toThrow(TypeError);
+  expect(() => buildAST(['values:i[]', '<-', '[', '1', ']', 'f:i', 'values:t[]', '->', 'values', '.', 'sum'])).toThrow(TypeError);
+  expect(() => buildAST(['[', '1', ']', '.', 'uppercase'])).toThrow(TypeError);
+});
+
 // Verifies line boundaries work inside blocks and do not hide missing call arguments.
 test('parses line-separated calls in blocks', () => {
   expect(buildAST([
@@ -222,4 +265,23 @@ test('rejects malformed syntax', () => {
   ]) {
     expect(() => buildAST(tokens)).toThrow(SyntaxError);
   }
+});
+// Verifies nested arrays, multiline elements, and malformed bracket syntax.
+test('parses array literals and rejects malformed arrays', () => {
+  expect(buildAST(['[', '1', '\n', '[', 'true', '"text"', ']', '[', ']', ']']).body).toEqual([{
+    type: 'ArrayLiteral', elements: [
+      { type: 'NumberLiteral', value: 1 },
+      { type: 'ArrayLiteral', elements: [
+        { type: 'BooleanLiteral', value: true },
+        { type: 'TextLiteral', value: 'text' },
+      ] },
+      { type: 'ArrayLiteral', elements: [] },
+    ],
+  }]);
+  for (const tokens of [['['], ['[', '1'], ['[', '[', ']'], [']'], ['[', '1', ',', '2', ']']]) {
+    expect(() => buildAST(tokens)).toThrow(SyntaxError);
+  }
+  expect(() => buildAST(['[', '1', ']', '+', '2'])).toThrow(TypeError);
+  expect(() => buildAST(['values:i', '<-', '[', ']'])).toThrow(TypeError);
+  expect(() => buildAST(['f:i', 'x:i', '->', 'x', '+', '1', '[', 'f', ']'])).toThrow('Expected 1 arguments');
 });

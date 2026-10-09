@@ -3,6 +3,46 @@ import { buildAST } from './ast';
 import { executeAST } from './execute';
 import { tokenizer } from './tokenizer';
 
+// Verifies typed numeric arrays sum literals, expressions, references, and empty arrays.
+test('executes typed array sum methods', async () => {
+  const source = [
+    'base:i <- 2',
+    'counts:i[] <- [base 3 + 4 -1]',
+    'measurements:f[] <- [1 2.5\n3.5]',
+    'names:t[] <- ["Ada" "Grace"]',
+    'empty:i[] <- []',
+    'emptyFloat:f[] <- []',
+    'total:i <- counts.sum',
+    'floatTotal:f <- measurements.sum',
+    'inferred <- [4 5]',
+    'sumValues:i values:i[] -> values.sum',
+    'numbers:i[] -> [8 9]',
+    'put total floatTotal empty.sum emptyFloat.sum inferred.sum sumValues [2 3] numbers.sum names',
+  ].join('\n');
+  const tokens = await tokenizer(new Blob([source]).stream().pipeThrough(new TextDecoderStream()));
+  const log = spyOn(console, 'log').mockImplementation(
+    // Records output without printing during the test.
+    () => {},
+  );
+  try {
+    executeAST(buildAST(tokens));
+    expect(log.mock.calls).toEqual([[8, 7, 0, 0, 9, 5, 17, ['Ada', 'Grace']]]);
+  } finally {
+    log.mockRestore();
+  }
+  expect(executeAST(buildAST(['[', '1', '2', ']', '.', 'sum', '+', '3']))).toBe(6);
+});
+
+// Verifies runtime sum rejects invalid receivers even when supplied through function arguments or a raw AST.
+test('rejects invalid runtime sum receivers', () => {
+  expect(() => executeAST(buildAST([
+    'total:i', 'values:i[]', '->', 'values', '.', 'sum', 'total', '[', '"bad"', ']',
+  ]))).toThrow('requires numeric elements');
+  expect(() => executeAST({ type: 'Program', body: [{
+    type: 'MethodCall', name: 'sum', receiver: { type: 'NumberLiteral', value: 1 },
+  }] })).toThrow('requires a receiver of type "i[]" or "f[]"');
+});
+
 // Verifies each put stops at its line ending, including comments and empty calls.
 test('ends put statements at line boundaries', async () => {
   const log = spyOn(console, 'log').mockImplementation(
@@ -160,4 +200,24 @@ test('isolates executions and preserves AST nodes', () => {
       right: { type: 'NumberLiteral', value: 1 },
     }],
   })).toThrow(ReferenceError);
+});
+// Verifies arrays evaluate references, expressions, calls, and nested values through the full pipeline.
+test('executes arrays of values', async () => {
+  const source = 'add:i x:i y:i -> x + y\nvalue:i <- 4\nvalues:a <- [value 2 + 3 add 6 7\n# comment\ntrue "hello".uppercase [] [8 9]]\nput values\nput []\nput [1\n2] 3\nput "done"';
+  const tokens = await tokenizer(new Blob([source]).stream().pipeThrough(new TextDecoderStream()));
+  const ast = buildAST(tokens);
+  const log = spyOn(console, 'log').mockImplementation(
+    // Records array output without printing during the test.
+    () => {},
+  );
+  try {
+    executeAST(ast);
+    expect(log.mock.calls).toEqual([
+      [[4, 5, 13, true, 'HELLO', [], [8, 9]]], [[]], [[1, 2], 3], ['done'],
+    ]);
+  } finally {
+    log.mockRestore();
+  }
+  expect(executeAST(buildAST(['[', '1', '[', '2', ']', ']']))).toEqual([1, [2]]);
+  expect(executeAST(buildAST(['identity:a', 'value:a', '->', '[', 'value', ']', 'identity', '[', '1', ']']))).toEqual([[1]]);
 });

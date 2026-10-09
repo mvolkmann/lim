@@ -73,11 +73,11 @@ function isToken(buffer: string): boolean {
 }
 
 // Checks whether a token contains two identifiers separated by a colon.
-// The first is a name and the second is a type (e.g., "radius:f").
+// The first is a name and the second is a scalar or array type (e.g., "values:i[]").
 export function isTypedIdentifier(token: string): boolean {
   const parts = token.split(':');
   if (parts.length !== 2) return false;
-  return isIdentifier(parts[0]) && isIdentifier(parts[1]);
+  return isIdentifier(parts[0]) && isIdentifier(parts[1].replace(/\[\]$/, ''));
 }
 
 // Reads whitespace-delimited tokens from a stream, ignoring # comments through end of line.
@@ -116,6 +116,9 @@ export async function tokenizer(stream: ReadableStream<string>) {
       if (char === '"' && buffer.length === 0) {
         buffer += char;
         inText = true;
+      } else if (char === '[' || char === ']') {
+        flushToken();
+        tokens.push(char);
       } else if (char === '.' && !/^-?\d+$/.test(buffer)) {
         flushToken();
         tokens.push('.');

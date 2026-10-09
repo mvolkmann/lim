@@ -8,3 +8,6 @@ put product 2 pi
 word:t <- "foo"
 put word.length
 put word.uppercase
+
+numbers:i[] <- [1 2 3]
+put numbers.sum

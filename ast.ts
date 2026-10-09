@@ -3,6 +3,7 @@ import { isIdentifier, isTypedIdentifier } from './tokenizer';
 type TypedIdentifier = { name: string; type: string };
 
 export type Expression =
+  | { type: 'ArrayLiteral'; elements: Expression[] }
   | { type: 'Assignment'; name: string; declaredType?: string; value: Expression }
   | { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }
   | { type: 'FunctionCall'; name: string; arguments: Argument[] }
@@ -29,6 +30,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   // float ::= '-'? digit+ '.' digit+
   // digit ::= '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
   // text ::= '"' character* '"'
+  // array ::= '[' (argument (operator argument)*)* ']'
   // identifier ::= letter (letter | digit | '_')*
   // pair ::= identifier ':' type
   // parameter ::= pair
@@ -58,10 +60,24 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   // Resolves an expression's declared or inferred value type in the current scope.
   function getType(expression: Expression): string | undefined {
     switch (expression.type) {
+      case 'ArrayLiteral': {
+        if (expression.elements.length === 0) return 'a';
+        let elementType = getType(expression.elements[0]);
+        for (const element of expression.elements) {
+          const type = getType(element);
+          if ((elementType === 'i' || elementType === 'f') && (type === 'i' || type === 'f')) {
+            if (type === 'f') elementType = 'f';
+          } else if (type !== elementType) {
+            return 'a';
+          }
+        }
+        return elementType === 'i' || elementType === 'f' || elementType === 't' ? `${elementType}[]` : 'a';
+      }
       case 'BooleanLiteral': return 'b';
       case 'NumberLiteral': return Number.isInteger(expression.value) ? 'i' : 'f';
       case 'TextLiteral': return 't';
       case 'MethodCall':
+        if (expression.name === 'sum') return getType(expression.receiver) === 'i[]' ? 'i' : 'f';
         return expression.name === 'length' ? 'i' : 't';
       case 'Identifier':
       case 'FunctionCall':
@@ -76,16 +92,22 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     }
   }
 
-  // Parses a value followed by any zero-argument Text method calls.
+  // Parses a value followed by zero-argument Text or numeric array methods.
   function readArgument(): Argument {
     let receiver = readPrimaryArgument();
     while (tokens[position] === '.') {
       position++;
       const name = tokens[position];
       if (!isIdentifier(name ?? '')) fail('Expected a method name');
-      if (!['length', 'uppercase', 'lowercase'].includes(name)) fail(`Unknown Text method "${name}"`);
-      if (getType(receiver) !== 't') {
-        throw new TypeError(`Text method "${name}" requires a receiver of type "t"`);
+      if (name === 'sum') {
+        if (getType(receiver) !== 'i[]' && getType(receiver) !== 'f[]') {
+          throw new TypeError('Array method "sum" requires a receiver of type "i[]" or "f[]"');
+        }
+      } else {
+        if (!['length', 'uppercase', 'lowercase'].includes(name)) fail(`Unknown Text method "${name}"`);
+        if (getType(receiver) !== 't') {
+          throw new TypeError(`Text method "${name}" requires a receiver of type "t"`);
+        }
       }
       position++;
       receiver = { type: 'MethodCall', receiver, name };
@@ -93,12 +115,38 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     return receiver;
   }
 
+  // Parses a bracket-delimited array, allowing line breaks between elements.
+  function readArray(): Expression {
+    position++;
+    const elements: Expression[] = [];
+    skipNewlines();
+    while (position < tokens.length && tokens[position] !== ']') {
+      elements.push(readBinaryExpression());
+      skipNewlines();
+    }
+    if (tokens[position] !== ']') fail('Expected "]"');
+    position++;
+    return { type: 'ArrayLiteral', elements };
+  }
+
   // Validates an initializer and records the variable's declared or inferred type.
   function readAssignment(name: string, declaredType?: string): Expression {
     position++;
     const value = readExpression();
     const valueType = getType(value);
-    if (declaredType !== undefined && valueType !== declaredType) {
+    let compatible = declaredType === undefined || valueType === declaredType ||
+      (declaredType === 'a' && (value.type === 'ArrayLiteral' || valueType?.endsWith('[]')));
+    if (declaredType !== undefined && ['i[]', 'f[]', 't[]'].includes(declaredType) && value.type === 'ArrayLiteral') {
+      compatible = true;
+      const elementType = declaredType.slice(0, -2);
+      for (const element of value.elements) {
+        const type = getType(element);
+        if (type !== elementType && !(elementType === 'f' && type === 'i')) {
+          throw new TypeError(`Array "${name}" of type "${declaredType}" cannot contain an element of type "${type ?? 'unknown'}"`);
+        }
+      }
+    }
+    if (!compatible) {
       throw new TypeError(
         `Variable "${name}" declared as type "${declaredType}" cannot be initialized with type "${valueType ?? 'unknown'}"`,
       );
@@ -152,7 +200,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     const arity = getArity(name);
     const args: Argument[] = [];
     while (arity === undefined || args.length < arity) {
-      if (position >= tokens.length || tokens[position] === '\n' || tokens[position] === '}' || startsAssignment()) {
+      if (position >= tokens.length || tokens[position] === '\n' || tokens[position] === '}' || tokens[position] === ']' || startsAssignment()) {
         if (arity !== undefined) fail(`Expected ${arity} arguments for "${name}"`);
         break;
       }
@@ -197,6 +245,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   function readPrimaryArgument(): Argument {
     const token = tokens[position];
     if (token === undefined) fail('Expected an argument');
+    if (token === '[') return readArray();
     if (token === 'true' || token === 'false') {
       position++;
       return { type: 'BooleanLiteral', value: token === 'true' };
@@ -221,16 +270,23 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   // Reads a name/type pair in either supported token representation.
   function readTypedIdentifier(): TypedIdentifier {
     const token = tokens[position];
+    let name: string;
+    let type: string;
     if (isTypedIdentifier(token)) {
       position++;
-      const [name, type] = token.split(':');
-      return { name, type };
+      [name, type] = token.split(':');
+    } else {
+      name = tokens[position++];
+      if (tokens[position++] !== ':') fail('Expected ":"');
+      type = tokens[position];
+      if (!isIdentifier(type ?? '')) fail('Expected a type identifier');
+      position++;
     }
-    const name = tokens[position++];
-    if (tokens[position++] !== ':') fail('Expected ":"');
-    const type = tokens[position];
-    if (!isIdentifier(type ?? '')) fail('Expected a type identifier');
-    position++;
+    if (tokens[position] === '[' && tokens[position + 1] === ']') {
+      type += '[]';
+      position += 2;
+    }
+    if (type.endsWith('[]') && !['i[]', 'f[]', 't[]'].includes(type)) fail(`Unsupported array type "${type}"`);
     return { name, type };
   }
 
@@ -242,8 +298,11 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   // Detects an untyped or typed assignment at the current token position.
   function startsAssignment(): boolean {
     const token = tokens[position] ?? '';
-    return ((isIdentifier(token) || isTypedIdentifier(token)) && tokens[position + 1] === '<-') ||
-      (startsTypedIdentifier() && tokens[position + 3] === '<-');
+    if (isIdentifier(token) && tokens[position + 1] === '<-') return true;
+    if (!startsTypedIdentifier()) return false;
+    let end = position + (isTypedIdentifier(token) ? 1 : 3);
+    if (tokens[end] === '[' && tokens[end + 1] === ']') end += 2;
+    return tokens[end] === '<-';
   }
 
   // Detects either a compact or whitespace-separated name/type pair.
@@ -254,7 +313,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
 
   // Rejects literal and identifier operands whose types are not numeric.
   function validateNumericOperand(expression: Expression, operator: string): void {
-    if (expression.type !== 'BooleanLiteral' && expression.type !== 'NumberLiteral' &&
+    if (expression.type !== 'ArrayLiteral' && expression.type !== 'BooleanLiteral' && expression.type !== 'NumberLiteral' &&
         expression.type !== 'TextLiteral' && expression.type !== 'Identifier') return;
     const type = getType(expression);
     if (type !== 'i' && type !== 'f') {
