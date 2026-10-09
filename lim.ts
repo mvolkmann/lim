@@ -1,5 +1,6 @@
 import { buildAST } from './ast';
 import { executeAST } from './execute';
+import { generateRust } from './rust';
 import { tokenizer } from './tokenizer';
 
 // Reads the input file specified on the command line.
@@ -18,7 +19,11 @@ async function main(): Promise<void> {
     const tokens = await tokenizer(stream);
     const ast = buildAST(tokens);
     console.log('lim.ts: AST =', JSON.stringify(ast, null, 2));
+
     executeAST(ast);
+
+    const rustCode = generateRust(ast);
+    await Bun.write('lim.rs', rustCode);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

@@ -47,3 +47,23 @@ put word.uppercase
 put word.lowercase
 put "Hello".uppercase.lowercase
 ```
+
+`generateRust` in `rust.ts` accepts the same program AST as `executeAST` and
+returns a standalone Rust source string. Write it to a `.rs` file and compile
+it with `rustc --edition=2021`. The generated program includes a small runtime
+using Rust's standard library for lexical closures, mixed arrays, text methods,
+and `put`. Numbers use `f64` to preserve the interpreter's arithmetic, including
+fractional division. Arrays and functions use readable Rust-side print formatting.
+
+```ts
+import { buildAST } from './ast';
+import { generateRust } from './rust';
+import { tokenizer } from './tokenizer';
+
+const stream = Bun.file('demo.lim').stream().pipeThrough(new TextDecoderStream());
+const ast = buildAST(await tokenizer(stream));
+await Bun.write('demo.rs', generateRust(ast));
+```
+
+Rust compilation tests run when `rustc` is available on `PATH`, through `RUSTC`,
+or in a local rustup toolchain.
