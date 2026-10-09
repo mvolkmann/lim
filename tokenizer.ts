@@ -57,16 +57,16 @@ function isNumber(token: string): boolean {
 
 // Checks whether the buffer is a supported lexical token.
 function isToken(buffer: string): boolean {
-  if (buffer.length == 1 && operators1.has(buffer)) return true;
-  if (buffer.length == 2 && operators2.has(buffer)) return true;
-  return keywords.has(buffer) ||
+  return (buffer.length == 1 && operators1.has(buffer)) ||
+    (buffer.length == 2 && operators2.has(buffer)) ||
+    keywords.has(buffer) ||
     isNumber(buffer) ||
     isIdentifier(buffer) ||
     isTypedIdentifier(buffer);
 }
 
 // Checks whether a token contains two identifiers separated by a colon.
-// The first is a name and the second is a type (e.g., "x:f").
+// The first is a name and the second is a type (e.g., "radius:f").
 export function isTypedIdentifier(token: string): boolean {
   const parts = token.split(':');
   if (parts.length !== 2) return false;
