@@ -1,0 +1,3 @@
+add:i n1:i n2:i -> n1 + n2
+
+put add 2 3

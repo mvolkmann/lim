@@ -1,0 +1,27 @@
+{
+  "name": "lim",
+  "version": "1.0.0",
+  "description": "Less Is More (LIM) parser",
+  "main": "parser.ts",
+  "scripts": {
+    "start": "bun run parser.ts demo.lim",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "R. Mark Volkmann",
+  "license": "MIT",
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.3",
+      "onFail": "error"
+    }
+  },
+  "packageManager": "bun@1.4.3",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}
