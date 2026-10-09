@@ -2,9 +2,9 @@
   "name": "lim",
   "version": "1.0.0",
   "description": "Less Is More (LIM) parser",
-  "main": "parser.ts",
+  "main": "lim.ts",
   "scripts": {
-    "start": "bun run parser.ts demo.lim",
+    "start": "bun run lim.ts demo.lim",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from 'bun:test';
-import { buildAST, executeAST } from './parser';
+import { buildAST } from './ast';
+import { executeAST } from './lim';
 
 // Verifies nested calls evaluate before put prints the demo's result.
 test('executes demo.lim and prints 5', async () => {

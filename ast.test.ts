@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildAST } from './parser';
+import { buildAST } from './ast';
 
 // Verifies the demo's implicit arithmetic body ends before the top-level call.
 test('parses demo.lim without block delimiters', async () => {
