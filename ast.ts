@@ -1,11 +1,11 @@
-import { isIdentifier, isPair } from './tokenizer';
+import { isIdentifier, isTypedIdentifier } from './tokenizer';
 
-type Pair = { name: string; type: string };
+type TypedIdentifier = { name: string; type: string };
 export type Expression =
   | { type: 'Assignment'; name: string; value: Expression }
   | { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }
   | { type: 'FunctionCall'; name: string; arguments: Argument[] }
-  | { type: 'FunctionDefinition'; signature: Pair; parameters: Pair[]; body: Block }
+  | { type: 'FunctionDefinition'; signature: TypedIdentifier; parameters: TypedIdentifier[]; body: Block }
   | { type: 'BooleanLiteral'; value: boolean }
   | { type: 'NumberLiteral'; value: number }
   | { type: 'TextLiteral'; value: string }
@@ -66,7 +66,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       position++;
       return { type: 'TextLiteral', value: token.slice(1, -1) };
     }
-    if (startsPair()) return readExpression();
+    if (startsTypedIdentifier()) return readExpression();
     if (isIdentifier(token)) {
       if (getArity(token) !== undefined) return readCall();
       position++;
@@ -122,10 +122,10 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
 
   // Parses an assignment, function call, or typed function definition.
   function readExpression(): Expression {
-    if (startsPair()) {
-      const signature = readPair();
-      const parameters: Pair[] = [];
-      while (startsPair()) parameters.push(readPair());
+    if (startsTypedIdentifier()) {
+      const signature = readTypedIdentifier();
+      const parameters: TypedIdentifier[] = [];
+      while (startsTypedIdentifier()) parameters.push(readTypedIdentifier());
       if (tokens[position] !== '->') fail('Expected "->"');
       position++;
       scopes[scopes.length - 1].set(signature.name, parameters.length);
@@ -149,9 +149,9 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   }
 
   // Reads a name/type pair in either supported token representation.
-  function readPair(): Pair {
+  function readTypedIdentifier(): TypedIdentifier {
     const token = tokens[position];
-    if (isPair(token)) {
+    if (isTypedIdentifier(token)) {
       position++;
       const [name, type] = token.split(':');
       return { name, type };
@@ -165,8 +165,8 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   }
 
   // Detects either a compact or whitespace-separated name/type pair.
-  function startsPair(): boolean {
-    return isPair(tokens[position] ?? '') ||
+  function startsTypedIdentifier(): boolean {
+    return isTypedIdentifier(tokens[position] ?? '') ||
       (isIdentifier(tokens[position] ?? '') && tokens[position + 1] === ':');
   }
 

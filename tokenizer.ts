@@ -55,14 +55,6 @@ function isNumber(token: string): boolean {
   return /^[-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(token);
 }
 
-// Checks whether a token contains two identifiers separated by a colon.
-// The first is a name and the second is a type (e.g., "x:f").
-export function isPair(token: string): boolean {
-  const parts = token.split(':');
-  if (parts.length !== 2) return false;
-  return isIdentifier(parts[0]) && isIdentifier(parts[1]);
-}
-
 // Checks whether the buffer is a supported lexical token.
 function isToken(buffer: string): boolean {
   if (buffer.length == 1 && operators1.has(buffer)) return true;
@@ -70,7 +62,15 @@ function isToken(buffer: string): boolean {
   return keywords.has(buffer) ||
     isNumber(buffer) ||
     isIdentifier(buffer) ||
-    isPair(buffer);
+    isTypedIdentifier(buffer);
+}
+
+// Checks whether a token contains two identifiers separated by a colon.
+// The first is a name and the second is a type (e.g., "x:f").
+export function isTypedIdentifier(token: string): boolean {
+  const parts = token.split(':');
+  if (parts.length !== 2) return false;
+  return isIdentifier(parts[0]) && isIdentifier(parts[1]);
 }
 
 // Reads whitespace-delimited tokens from a stream and returns recognized tokens.
