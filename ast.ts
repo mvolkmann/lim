@@ -37,8 +37,9 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   // fndef ::= pair parameter* '->' block
   // block ::= '{' expression* '}' | expression
   let position = 0;
-  const precedence: Record<string, number> = { '+': 1, '-': 1, '*': 2, '/': 2, '^': 3 };
+  const precedence: Record<string, number> = { '+': 1, '-': 1, '*': 2, '/': 2, '**': 3, '^': 3 };
   const scopes: Map<string, number | null>[] = [new Map()];
+  const typeScopes: Map<string, string | undefined>[] = [new Map()];
 
   // Reports invalid syntax at the current token position.
   function fail(message: string): never {
@@ -51,6 +52,25 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       if (scopes[index].has(name)) return scopes[index].get(name) ?? undefined;
     }
     return undefined;
+  }
+
+  // Resolves an expression's declared or inferred value type in the current scope.
+  function getType(expression: Expression): string | undefined {
+    switch (expression.type) {
+      case 'BooleanLiteral': return 'b';
+      case 'NumberLiteral': return Number.isInteger(expression.value) ? 'i' : 'f';
+      case 'TextLiteral': return 't';
+      case 'Identifier':
+      case 'FunctionCall':
+        for (let index = typeScopes.length - 1; index >= 0; index--) {
+          if (typeScopes[index].has(expression.name)) return typeScopes[index].get(expression.name);
+        }
+        return undefined;
+      case 'Assignment': return getType(expression.value);
+      case 'BinaryExpression':
+        return getType(expression.left) === 'f' || getType(expression.right) === 'f' ? 'f' : 'i';
+      case 'FunctionDefinition': return undefined;
+    }
   }
 
   // Parses a literal, name reference, nested call, or function definition argument.
@@ -86,7 +106,9 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       const rank = precedence[operator];
       if (rank === undefined || rank < minimumPrecedence) break;
       position++;
-      const right = readBinaryExpression(operator === '^' ? rank : rank + 1);
+      const right = readBinaryExpression(operator === '^' || operator === '**' ? rank : rank + 1);
+      validateNumericOperand(left, operator);
+      validateNumericOperand(right, operator);
       left = { type: 'BinaryExpression', operator, left, right };
     }
     return left;
@@ -132,11 +154,14 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       if (tokens[position] !== '->') fail('Expected "->"');
       position++;
       scopes[scopes.length - 1].set(signature.name, parameters.length);
+      typeScopes[typeScopes.length - 1].set(signature.name, signature.type);
       scopes.push(new Map(parameters.map(parameter => [parameter.name, null])));
+      typeScopes.push(new Map(parameters.map(parameter => [parameter.name, parameter.type])));
       try {
         return { type: 'FunctionDefinition', signature, parameters, body: readBlock() };
       } finally {
         scopes.pop();
+        typeScopes.pop();
       }
     }
     const name = tokens[position];
@@ -146,7 +171,10 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     }
     if (tokens[position + 1] === '<-') {
       position += 2;
-      return { type: 'Assignment', name, value: readExpression() };
+      const value = readExpression();
+      scopes[scopes.length - 1].set(name, null);
+      typeScopes[typeScopes.length - 1].set(name, getType(value));
+      return { type: 'Assignment', name, value };
     }
     return readCall();
   }
@@ -171,6 +199,16 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   function startsTypedIdentifier(): boolean {
     return isTypedIdentifier(tokens[position] ?? '') ||
       (isIdentifier(tokens[position] ?? '') && tokens[position + 1] === ':');
+  }
+
+  // Rejects literal and identifier operands whose types are not numeric.
+  function validateNumericOperand(expression: Expression, operator: string): void {
+    if (expression.type !== 'BooleanLiteral' && expression.type !== 'NumberLiteral' &&
+        expression.type !== 'TextLiteral' && expression.type !== 'Identifier') return;
+    const type = getType(expression);
+    if (type !== 'i' && type !== 'f') {
+      throw new TypeError(`Operator "${operator}" requires numeric operands of type "i" or "f"`);
+    }
   }
 
   const body: Expression[] = [];

@@ -1,6 +1,43 @@
 import { expect, test } from 'bun:test';
 import { buildAST } from './ast';
 
+// Verifies all arithmetic operators reject nonnumeric literals and parameter types on either side.
+test('rejects nonnumeric arithmetic operands', () => {
+  for (const operator of ['+', '-', '*', '/', '**', '^']) {
+    for (const literal of ['true', 'false', '"text"']) {
+      expect(() => buildAST([literal, operator, '1'])).toThrow(TypeError);
+      expect(() => buildAST(['1', operator, literal])).toThrow(TypeError);
+    }
+    for (const type of ['b', 't', 'unknown']) {
+      expect(() => buildAST(['f:i', `x:${type}`, '->', 'x', operator, '1'])).toThrow(TypeError);
+      expect(() => buildAST(['f:i', `x:${type}`, '->', '1', operator, 'x'])).toThrow(TypeError);
+    }
+    for (const type of ['i', 'f']) {
+      expect(() => buildAST(['f:i', `x:${type}`, '->', 'x', operator, '1.5'])).not.toThrow();
+    }
+  }
+});
+
+// Verifies assignments infer operand types and parameters shadow outer bindings.
+test('resolves arithmetic identifier types in lexical scopes', () => {
+  expect(() => buildAST(['x', '+', '1'])).toThrow(TypeError);
+  expect(() => buildAST(['x', '<-', 'true', 'x', '+', '1'])).toThrow(TypeError);
+  expect(() => buildAST(['x', '<-', '1', 'x', '+', '2'])).not.toThrow();
+  expect(() => buildAST(['x', '<-', '1', 'f:i', 'x:t', '->', 'x', '+', '2'])).toThrow(TypeError);
+  expect(() => buildAST(['x', '<-', 'true', 'f:i', 'x:f', '->', 'x', '+', '2'])).not.toThrow();
+});
+
+// Verifies double-star powers have higher precedence and associate to the right.
+test('parses double-star exponentiation', () => {
+  expect(buildAST(['2', '*', '3', '**', '4', '**', '5']).body[0]).toMatchObject({
+    type: 'BinaryExpression', operator: '*',
+    right: {
+      type: 'BinaryExpression', operator: '**',
+      right: { type: 'BinaryExpression', operator: '**' },
+    },
+  });
+});
+
 // Verifies the demo's implicit arithmetic body ends before the top-level call.
 test('parses demo.lim without block delimiters', async () => {
   const source = await Bun.file(new URL('./demo.lim', import.meta.url)).text();

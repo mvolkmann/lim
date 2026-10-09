@@ -67,5 +67,12 @@ test('isolates executions and preserves AST nodes', () => {
   expect(executeAST(ast)).toBe(5);
   expect(executeAST(ast)).toBe(5);
   expect(ast).toEqual(original);
-  expect(() => executeAST(buildAST(['x', '+', '1']))).toThrow(ReferenceError);
+  expect(() => executeAST({
+    type: 'Program',
+    body: [{
+      type: 'BinaryExpression', operator: '+',
+      left: { type: 'Identifier', name: 'x' },
+      right: { type: 'NumberLiteral', value: 1 },
+    }],
+  })).toThrow(ReferenceError);
 });
