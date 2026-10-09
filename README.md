@@ -1,3 +1,3 @@
-Less Is More (LIM) Parser
+# Less Is More (LIM) Parser
 
 This project implements a parser for the LIM programming language.
