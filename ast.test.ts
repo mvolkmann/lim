@@ -1,5 +1,20 @@
 import { expect, test } from 'bun:test';
 import { buildAST } from './ast';
+import { tokenizer } from './tokenizer';
+
+// Verifies compact and separated declarations preserve the name, type, and initializer.
+test('parses typed variable declarations', () => {
+  for (const prefix of [['score:i'], ['score', ':', 'i']]) {
+    expect(buildAST([...prefix, '<-', '3']).body).toEqual([{
+      type: 'Assignment', name: 'score', declaredType: 'i',
+      value: { type: 'NumberLiteral', value: 3 },
+    }]);
+    expect(() => buildAST([...prefix, '<-'])).toThrow(SyntaxError);
+    expect(buildAST(['put', '1', ...prefix, '<-', '3']).body).toHaveLength(2);
+  }
+  expect(() => buildAST(['score:i', '<-', '3', 'score', '+', '2'])).not.toThrow();
+  expect(() => buildAST(['score:t', '<-', '3', 'score', '+', '2'])).toThrow(TypeError);
+});
 
 // Verifies all arithmetic operators reject nonnumeric literals and parameter types on either side.
 test('rejects nonnumeric arithmetic operands', () => {
@@ -38,10 +53,10 @@ test('parses double-star exponentiation', () => {
   });
 });
 
-// Verifies the demo's implicit arithmetic body ends before the top-level call.
+// Verifies tokenization and parsing of the demo's function, declaration, and call.
 test('parses demo.lim without block delimiters', async () => {
-  const source = await Bun.file(new URL('./demo.lim', import.meta.url)).text();
-  expect(buildAST(source.trim().split(/\s+/))).toEqual({
+  const stream = Bun.file(new URL('./demo.lim', import.meta.url)).stream().pipeThrough(new TextDecoderStream());
+  expect(buildAST(await tokenizer(stream))).toEqual({
     type: 'Program',
     body: [
       {
@@ -58,13 +73,17 @@ test('parses demo.lim without block delimiters', async () => {
         },
       },
       {
+        type: 'Assignment', name: 'score', declaredType: 'i',
+        value: { type: 'NumberLiteral', value: 3 },
+      },
+      {
         type: 'FunctionCall', name: 'put',
         arguments: [
           {
             type: 'FunctionCall', name: 'add',
             arguments: [
               { type: 'NumberLiteral', value: 2 },
-              { type: 'NumberLiteral', value: 3 },
+              { type: 'Identifier', name: 'score' },
             ],
           },
         ],

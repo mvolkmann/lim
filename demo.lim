@@ -1,3 +1,5 @@
 add:i n1:i n2:i -> n1 + n2
 
-put add 2 3
+score:i <- 3
+
+put add 2 score

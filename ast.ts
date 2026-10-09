@@ -3,7 +3,7 @@ import { isIdentifier, isTypedIdentifier } from './tokenizer';
 type TypedIdentifier = { name: string; type: string };
 
 export type Expression =
-  | { type: 'Assignment'; name: string; value: Expression }
+  | { type: 'Assignment'; name: string; declaredType?: string; value: Expression }
   | { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }
   | { type: 'FunctionCall'; name: string; arguments: Argument[] }
   | { type: 'FunctionDefinition'; signature: TypedIdentifier; parameters: TypedIdentifier[]; body: Block }
@@ -32,7 +32,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   // pair ::= identifier ':' type
   // parameter ::= pair
   // expression ::= assign | fncall | fndef | argument (operator argument)*
-  // assign ::= identifier '<-' expression
+  // assign ::= (identifier | pair) '<-' expression
   // fncall ::= identifier argument*
   // fndef ::= pair parameter* '->' block
   // block ::= '{' expression* '}' | expression
@@ -66,7 +66,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
           if (typeScopes[index].has(expression.name)) return typeScopes[index].get(expression.name);
         }
         return undefined;
-      case 'Assignment': return getType(expression.value);
+      case 'Assignment': return expression.declaredType ?? getType(expression.value);
       case 'BinaryExpression':
         return getType(expression.left) === 'f' || getType(expression.right) === 'f' ? 'f' : 'i';
       case 'FunctionDefinition': return undefined;
@@ -96,6 +96,17 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       return { type: 'Identifier', name: token };
     }
     return fail('Expected an argument');
+  }
+
+  // Parses an initializer and records the variable's declared or inferred type.
+  function readAssignment(name: string, declaredType?: string): Expression {
+    position++;
+    const value = readExpression();
+    scopes[scopes.length - 1].set(name, null);
+    typeScopes[typeScopes.length - 1].set(name, declaredType ?? getType(value));
+    return declaredType === undefined
+      ? { type: 'Assignment', name, value }
+      : { type: 'Assignment', name, declaredType, value };
   }
 
   // Parses arithmetic with multiplication precedence and right-associative powers.
@@ -135,8 +146,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     const arity = getArity(name);
     const args: Argument[] = [];
     while (arity === undefined || args.length < arity) {
-      if (position >= tokens.length || tokens[position] === '}' ||
-          (isIdentifier(tokens[position]) && tokens[position + 1] === '<-')) {
+      if (position >= tokens.length || tokens[position] === '}' || startsAssignment()) {
         if (arity !== undefined) fail(`Expected ${arity} arguments for "${name}"`);
         break;
       }
@@ -149,6 +159,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   function readExpression(): Expression {
     if (startsTypedIdentifier()) {
       const signature = readTypedIdentifier();
+      if (tokens[position] === '<-') return readAssignment(signature.name, signature.type);
       const parameters: TypedIdentifier[] = [];
       while (startsTypedIdentifier()) parameters.push(readTypedIdentifier());
       if (tokens[position] !== '->') fail('Expected "->"');
@@ -170,11 +181,8 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       return readBinaryExpression();
     }
     if (tokens[position + 1] === '<-') {
-      position += 2;
-      const value = readExpression();
-      scopes[scopes.length - 1].set(name, null);
-      typeScopes[typeScopes.length - 1].set(name, getType(value));
-      return { type: 'Assignment', name, value };
+      position++;
+      return readAssignment(name);
     }
     return readCall();
   }
@@ -193,6 +201,13 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     if (!isIdentifier(type ?? '')) fail('Expected a type identifier');
     position++;
     return { name, type };
+  }
+
+  // Detects an untyped or typed assignment at the current token position.
+  function startsAssignment(): boolean {
+    const token = tokens[position] ?? '';
+    return ((isIdentifier(token) || isTypedIdentifier(token)) && tokens[position + 1] === '<-') ||
+      (startsTypedIdentifier() && tokens[position + 3] === '<-');
   }
 
   // Detects either a compact or whitespace-separated name/type pair.

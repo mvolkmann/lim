@@ -14,6 +14,13 @@ function createStream(chunks: string[]): ReadableStream<string> {
 
 // Groups tests for tokenizing streamed input.
 describe('tokenizer', () => {
+  // Verifies typed declarations and a final token without trailing whitespace.
+  test('tokenizes typed variable declarations', async () => {
+    expect(await tokenizer(createStream(['score:', 'i <- ', '3']))).toEqual(['score:i', '<-', '3']);
+    expect(await tokenizer(createStream(['score : i <- 3']))).toEqual(['score', ':', 'i', '<-', '3']);
+    await expect(tokenizer(createStream(['@']))).rejects.toThrow('invalid token "@"');
+  });
+
   // Verifies keywords and both operator lengths with supported delimiters.
   test('recognizes keywords and operators separated by whitespace', async () => {
     expect(await tokenizer(createStream(['const +\n++\treturn <- ']))).toEqual([

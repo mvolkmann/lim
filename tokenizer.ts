@@ -93,6 +93,11 @@ export async function tokenizer(stream: ReadableStream<string>) {
     }
   }
 
+  if (buffer.length > 0) {
+    if (!isToken(buffer)) throw new Error(`invalid token "${buffer}"`);
+    tokens.push(buffer);
+  }
+
   return tokens;
 }
 
