@@ -6,6 +6,7 @@ export type Expression =
   | { type: 'Assignment'; name: string; declaredType?: string; value: Expression }
   | { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }
   | { type: 'FunctionCall'; name: string; arguments: Argument[] }
+  | { type: 'MethodCall'; receiver: Expression; name: string }
   | { type: 'FunctionDefinition'; signature: TypedIdentifier; parameters: TypedIdentifier[]; body: Block }
   | { type: 'BooleanLiteral'; value: boolean }
   | { type: 'NumberLiteral'; value: number }
@@ -60,6 +61,8 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       case 'BooleanLiteral': return 'b';
       case 'NumberLiteral': return Number.isInteger(expression.value) ? 'i' : 'f';
       case 'TextLiteral': return 't';
+      case 'MethodCall':
+        return expression.name === 'length' ? 'i' : 't';
       case 'Identifier':
       case 'FunctionCall':
         for (let index = typeScopes.length - 1; index >= 0; index--) {
@@ -73,29 +76,21 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     }
   }
 
-  // Parses a literal, name reference, nested call, or function definition argument.
+  // Parses a value followed by any zero-argument Text method calls.
   function readArgument(): Argument {
-    const token = tokens[position];
-    if (token === undefined) fail('Expected an argument');
-    if (token === 'true' || token === 'false') {
+    let receiver = readPrimaryArgument();
+    while (tokens[position] === '.') {
       position++;
-      return { type: 'BooleanLiteral', value: token === 'true' };
-    }
-    if (/^-?\d+(?:\.\d+)?$/.test(token)) {
+      const name = tokens[position];
+      if (!isIdentifier(name ?? '')) fail('Expected a method name');
+      if (!['length', 'uppercase', 'lowercase'].includes(name)) fail(`Unknown Text method "${name}"`);
+      if (getType(receiver) !== 't') {
+        throw new TypeError(`Text method "${name}" requires a receiver of type "t"`);
+      }
       position++;
-      return { type: 'NumberLiteral', value: Number(token) };
+      receiver = { type: 'MethodCall', receiver, name };
     }
-    if (/^"[^"\\]*(?:\\.[^"\\]*)*"$/.test(token)) {
-      position++;
-      return { type: 'TextLiteral', value: token.slice(1, -1) };
-    }
-    if (startsTypedIdentifier()) return readExpression();
-    if (isIdentifier(token)) {
-      if (getArity(token) !== undefined) return readCall();
-      position++;
-      return { type: 'Identifier', name: token };
-    }
-    return fail('Expected an argument');
+    return receiver;
   }
 
   // Validates an initializer and records the variable's declared or inferred type.
@@ -133,12 +128,17 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
 
   // Parses a brace-delimited body or a single implicit body expression.
   function readBlock(): Block {
+    skipNewlines();
     if (tokens[position] !== '{') {
       return { type: 'Block', body: [readExpression()] };
     }
     position++;
     const body: Expression[] = [];
     while (position < tokens.length && tokens[position] !== '}') {
+      if (tokens[position] === '\n') {
+        skipNewlines();
+        continue;
+      }
       body.push(readExpression());
     }
     if (tokens[position] !== '}') fail('Expected "}"');
@@ -152,7 +152,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     const arity = getArity(name);
     const args: Argument[] = [];
     while (arity === undefined || args.length < arity) {
-      if (position >= tokens.length || tokens[position] === '}' || startsAssignment()) {
+      if (position >= tokens.length || tokens[position] === '\n' || tokens[position] === '}' || startsAssignment()) {
         if (arity !== undefined) fail(`Expected ${arity} arguments for "${name}"`);
         break;
       }
@@ -182,7 +182,7 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       }
     }
     const name = tokens[position];
-    if ((name !== undefined && precedence[tokens[position + 1]] !== undefined) ||
+    if (tokens[position + 1] === '.' || (name !== undefined && precedence[tokens[position + 1]] !== undefined) ||
         !isIdentifier(name ?? '') || name === 'true' || name === 'false') {
       return readBinaryExpression();
     }
@@ -191,6 +191,31 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
       return readAssignment(name);
     }
     return readCall();
+  }
+
+  // Parses a literal, name reference, nested call, or function definition argument.
+  function readPrimaryArgument(): Argument {
+    const token = tokens[position];
+    if (token === undefined) fail('Expected an argument');
+    if (token === 'true' || token === 'false') {
+      position++;
+      return { type: 'BooleanLiteral', value: token === 'true' };
+    }
+    if (/^-?\d+(?:\.\d+)?$/.test(token)) {
+      position++;
+      return { type: 'NumberLiteral', value: Number(token) };
+    }
+    if (/^"[^"\\]*(?:\\.[^"\\]*)*"$/.test(token)) {
+      position++;
+      return { type: 'TextLiteral', value: token.slice(1, -1) };
+    }
+    if (startsTypedIdentifier()) return readExpression();
+    if (isIdentifier(token)) {
+      if (getArity(token) !== undefined) return readCall();
+      position++;
+      return { type: 'Identifier', name: token };
+    }
+    return fail('Expected an argument');
   }
 
   // Reads a name/type pair in either supported token representation.
@@ -207,6 +232,11 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
     if (!isIdentifier(type ?? '')) fail('Expected a type identifier');
     position++;
     return { name, type };
+  }
+
+  // Advances past blank lines between program or block statements.
+  function skipNewlines(): void {
+    while (tokens[position] === '\n') position++;
   }
 
   // Detects an untyped or typed assignment at the current token position.
@@ -233,7 +263,10 @@ export function buildAST(tokens: string[]): { type: 'Program'; body: Expression[
   }
 
   const body: Expression[] = [];
-  while (position < tokens.length) body.push(readExpression());
+  while (position < tokens.length) {
+    skipNewlines();
+    if (position < tokens.length) body.push(readExpression());
+  }
   return { type: 'Program', body };
 }
 

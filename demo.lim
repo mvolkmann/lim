@@ -2,7 +2,9 @@ sum:i n1:i n2:i -> n1 + n2
 product:f n1:f n2:f -> n1 * n2
 
 # This is a comment.
-word:t <- "foo"
 pi:f <- 3.14
-
 put product 2 pi
+
+word:t <- "foo"
+put word.length
+put word.uppercase

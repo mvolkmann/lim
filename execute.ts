@@ -4,6 +4,26 @@ type RuntimeValue = boolean | number | string | null | RuntimeFunction;
 type RuntimeFunction = (...args: RuntimeValue[]) => RuntimeValue;
 type Environment = { bindings: Map<string, RuntimeValue>; parent?: Environment };
 
+class Text {
+  // Wraps a text value for built-in instance method dispatch.
+  constructor(private readonly value: string) {}
+
+  // Returns the number of UTF-16 code units in the text.
+  length(): number {
+    return this.value.length;
+  }
+
+  // Returns the text converted to lowercase.
+  lowercase(): string {
+    return this.value.toLowerCase();
+  }
+
+  // Returns the text converted to uppercase.
+  uppercase(): string {
+    return this.value.toUpperCase();
+  }
+}
+
 // Executes a program in a fresh lexical environment and returns its final value.
 export function executeAST(ast: { type: 'Program'; body: Expression[] }): RuntimeValue {
   const environment: Environment = { bindings: new Map() };
@@ -17,6 +37,19 @@ export function executeAST(ast: { type: 'Program'; body: Expression[] }): Runtim
         return expression.value;
       case 'Identifier':
         return lookup(expression.name, scope);
+      case 'MethodCall': {
+        const receiver = executeExpression(expression.receiver, scope);
+        if (typeof receiver !== 'string') {
+          throw new TypeError(`Text method "${expression.name}" requires a receiver of type "t"`);
+        }
+        const text = new Text(receiver);
+        switch (expression.name) {
+          case 'length': return text.length();
+          case 'lowercase': return text.lowercase();
+          case 'uppercase': return text.uppercase();
+          default: throw new TypeError(`Unknown Text method "${expression.name}"`);
+        }
+      }
       case 'Assignment': {
         const value = executeExpression(expression.value, scope);
         scope.bindings.set(expression.name, value);
@@ -106,6 +139,7 @@ function formatExpression(expression: Expression): string {
     case 'NumberLiteral': return String(expression.value);
     case 'TextLiteral': return JSON.stringify(expression.value);
     case 'Identifier': return expression.name;
+    case 'MethodCall': return `${formatExpression(expression.receiver)}.${expression.name}`;
     case 'FunctionCall':
       return [expression.name, ...expression.arguments.map(formatExpression)].join(' ');
     case 'FunctionDefinition':

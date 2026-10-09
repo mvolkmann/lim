@@ -2,6 +2,19 @@ import { expect, test } from 'bun:test';
 import { buildAST } from './ast';
 import { tokenizer } from './tokenizer';
 
+// Verifies line boundaries work inside blocks and do not hide missing call arguments.
+test('parses line-separated calls in blocks', () => {
+  expect(buildAST([
+    'f:i', '->', '\n', '{', '\n', 'put', '1', '\n', 'put', '2', '\n', '}', '\n', 'f',
+  ]).body[0]).toMatchObject({ body: { body: [
+    { type: 'FunctionCall', name: 'put', arguments: [{ type: 'NumberLiteral', value: 1 }] },
+    { type: 'FunctionCall', name: 'put', arguments: [{ type: 'NumberLiteral', value: 2 }] },
+  ] } });
+  expect(() => buildAST([
+    'add:i', 'a:i', 'b:i', '->', 'a', '+', 'b', '\n', 'put', 'add', '1', '\n', 'put', '2',
+  ])).toThrow('Expected 2 arguments for "add"');
+});
+
 // Verifies declarations reject initializers with a different type before further expressions are parsed.
 test('checks typed assignment initializer types', () => {
   for (const prefix of [['score:t'], ['score', ':', 't']]) {

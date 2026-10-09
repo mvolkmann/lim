@@ -24,6 +24,7 @@ const operators1 = new Set([
   '>',
   '?',
   ':',
+  '.',
 ]);
 
 const operators2 = new Set([
@@ -109,16 +110,22 @@ export async function tokenizer(stream: ReadableStream<string>) {
         continue;
       }
       if (inComment) {
-        if (char === '\n' || char === '\r') inComment = false;
-        continue;
+        if (char !== '\n' && char !== '\r') continue;
+        inComment = false;
       }
       if (char === '"' && buffer.length === 0) {
         buffer += char;
         inText = true;
+      } else if (char === '.' && !/^-?\d+$/.test(buffer)) {
+        flushToken();
+        tokens.push('.');
       } else if (char === '#') {
         flushToken();
         inComment = true;
-      } else if (char === ' ' || char === '\n' || char === '\r' || char === '\t') {
+      } else if (char === '\n' || char === '\r') {
+        flushToken();
+        if (tokens.length > 0 && tokens[tokens.length - 1] !== '\n') tokens.push('\n');
+      } else if (char === ' ' || char === '\t') {
         flushToken();
       } else {
         buffer += char;

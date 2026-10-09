@@ -29,7 +29,7 @@ describe('tokenizer', () => {
   test('preserves text contents across stream chunks', async () => {
     expect(await tokenizer(createStream([
       'score:t <- "hello # ', 'world"# comment\nput ""',
-    ]))).toEqual(['score:t', '<-', '"hello # world"', 'put', '""']);
+    ]))).toEqual(['score:t', '<-', '"hello # world"', '\n', 'put', '""']);
     expect(await tokenizer(createStream(['"a\\', '"b"']))).toEqual(['"a\\"b"']);
     expect(await tokenizer(createStream(['"a\\', '\\"']))).toEqual(['"a\\\\"']);
     await expect(tokenizer(createStream(['"unfinished']))).rejects.toThrow('Unterminated text literal');
@@ -42,7 +42,7 @@ describe('tokenizer', () => {
       '# full-line comment with invalid symbols @\nscore:i <- 3# trailing comment\n',
       '# final comment without a newline',
     ]));
-    expect(tokens).toEqual(['score:i', '<-', '3']);
+    expect(tokens).toEqual(['score:i', '<-', '3', '\n']);
     expect(buildAST(tokens).body).toEqual([{
       type: 'Assignment', name: 'score', declaredType: 'i',
       value: { type: 'NumberLiteral', value: 3 },
@@ -54,8 +54,8 @@ describe('tokenizer', () => {
   test('ignores comments split across stream chunks', async () => {
     expect(await tokenizer(createStream([
       'score:i <- 3 # com', 'ment @', '\r', '\nput score#', ' another comment',
-    ]))).toEqual(['score:i', '<-', '3', 'put', 'score']);
-    expect(await tokenizer(createStream(['1# comment\r2']))).toEqual(['1', '2']);
+    ]))).toEqual(['score:i', '<-', '3', '\n', 'put', 'score']);
+    expect(await tokenizer(createStream(['1# comment\r2']))).toEqual(['1', '\n', '2']);
     await expect(tokenizer(createStream(['@# comment']))).rejects.toThrow('invalid token "@"');
   });
 
@@ -69,7 +69,7 @@ describe('tokenizer', () => {
   // Verifies keywords and both operator lengths with supported delimiters.
   test('recognizes keywords and operators separated by whitespace', async () => {
     expect(await tokenizer(createStream(['const +\n++\treturn <- ']))).toEqual([
-      'const', '+', '++', 'return', '<-',
+      'const', '+', '\n', '++', 'return', '<-',
     ]);
   });
 
