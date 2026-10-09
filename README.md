@@ -50,10 +50,17 @@ put "Hello".uppercase.lowercase
 
 `generateRust` in `rust.ts` accepts the same program AST as `executeAST` and
 returns a standalone Rust source string. Write it to a `.rs` file and compile
-it with `rustc --edition=2021`. The generated program includes a small runtime
-using Rust's standard library for lexical closures, mixed arrays, text methods,
-and `put`. Numbers use `f64` to preserve the interpreter's arithmetic, including
-fractional division. Arrays and functions use readable Rust-side print formatting.
+it with `rustc --edition=2021`. Output uses native Rust functions, variables,
+array literals, and `println!`, with no embedded runtime. Local variables use
+Rust's type inference and text literals stay borrowed. Single-expression
+functions stay on one line. Function signatures use `i64`, `f64`, `bool`,
+`String`, and `Vec<T>`, with conversions only where needed for ownership or types.
+Division uses floating-point arithmetic. ASCII text length becomes `.len()`;
+other text counts UTF-16 code units. Functions that capture variables become closures.
+
+Rust generation requires homogeneous arrays and concrete types for empty arrays.
+It rejects mixed arrays, function values, and rebinding captured variables.
+Native integer arithmetic and Rust's print formatting apply to generated code.
 
 ```ts
 import { buildAST } from './ast';

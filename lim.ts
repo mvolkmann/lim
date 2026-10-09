@@ -23,7 +23,7 @@ async function main(): Promise<void> {
     executeAST(ast);
 
     const rustCode = generateRust(ast);
-    await Bun.write('lim.rs', rustCode);
+    await Bun.write('demo.rs', rustCode);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
